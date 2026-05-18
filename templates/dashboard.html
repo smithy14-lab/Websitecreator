@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Dashboard — No-Website Businesses</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #f7f8fb;
+    color: #1a1a1a;
+    line-height: 1.5;
+  }
+  header {
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 1.25rem 2rem;
+  }
+  header h1 { font-size: 1.4rem; }
+  header .sub { color: #6b7280; font-size: 0.9rem; margin-top: 0.25rem; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .stat {
+    background: white;
+    padding: 1.25rem;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+  }
+  .stat .num { font-size: 1.75rem; font-weight: 700; color: #2563eb; }
+  .stat .lbl { color: #6b7280; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+  .btn {
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.6rem 1.1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    font-weight: 500;
+  }
+  .btn:hover { background: #1d4ed8; }
+  .btn-secondary { background: white; color: #2563eb; border: 1px solid #2563eb; }
+  .btn-secondary:hover { background: #eff6ff; }
+  form.inline { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+  input[type=text] {
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    min-width: 280px;
+  }
+  table {
+    width: 100%;
+    background: white;
+    border-collapse: collapse;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+  }
+  th, td { text-align: left; padding: 0.9rem 1rem; border-bottom: 1px solid #f1f5f9; }
+  th { background: #f9fafb; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: #6b7280; font-weight: 600; }
+  tr:hover td { background: #f9fafb; }
+  td .biz { font-weight: 600; }
+  td .meta { font-size: 0.85rem; color: #6b7280; margin-top: 0.15rem; }
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: capitalize;
+  }
+  .badge-new { background: #dbeafe; color: #1e40af; }
+  .badge-generated { background: #fef3c7; color: #92400e; }
+  .badge-contacted { background: #d1fae5; color: #065f46; }
+  .badge-interested { background: #ede9fe; color: #5b21b6; }
+  .badge-closed_won { background: #d1fae5; color: #064e3b; }
+  .badge-closed_lost { background: #fee2e2; color: #991b1b; }
+  .empty {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: #6b7280;
+    background: white;
+    border: 1px dashed #d1d5db;
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Website Creator — Lead Dashboard</h1>
+  <div class="sub">Small businesses without websites, plus AI-generated mockups + pitches.</div>
+</header>
+
+<div class="container">
+
+  <div class="stats">
+    <div class="stat"><div class="num">{{ stats.total }}</div><div class="lbl">Total leads</div></div>
+    <div class="stat"><div class="num">{{ stats.no_website }}</div><div class="lbl">No website</div></div>
+    <div class="stat"><div class="num">{{ stats.generated }}</div><div class="lbl">Sites generated</div></div>
+    <div class="stat"><div class="num">{{ stats.contacted }}</div><div class="lbl">Contacted</div></div>
+  </div>
+
+  <div class="actions">
+    <form method="post" action="/seed" class="inline">
+      <button class="btn-secondary btn" type="submit">+ Load sample leads</button>
+    </form>
+    <form method="post" action="/search" class="inline">
+      <input type="text" name="query" placeholder="e.g. plumber in Austin, TX">
+      <button class="btn" type="submit">Search Google Places</button>
+    </form>
+  </div>
+
+  {% if leads %}
+  <table>
+    <thead>
+      <tr>
+        <th>Business</th>
+        <th>Category</th>
+        <th>Phone</th>
+        <th>Status</th>
+        <th>Generated?</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for lead in leads %}
+      <tr>
+        <td>
+          <div class="biz">{{ lead.business_name }}</div>
+          <div class="meta">{{ lead.address or '' }}</div>
+        </td>
+        <td>{{ lead.category or '—' }}</td>
+        <td>{{ lead.phone or '—' }}</td>
+        <td><span class="badge badge-{{ lead.status }}">{{ lead.status.replace('_', ' ') }}</span></td>
+        <td>{% if lead.site_html %}✓{% else %}—{% endif %}</td>
+        <td><a class="btn-secondary btn" href="{{ url_for('lead_detail', lead_id=lead.id) }}">Open</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">
+    <p>No leads yet.</p>
+    <p style="margin-top:0.5rem;">Click <strong>Load sample leads</strong> above to get started.</p>
+  </div>
+  {% endif %}
+
+</div>
+
+</body>
+</html>
