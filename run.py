@@ -1,7 +1,6 @@
 """CLI entry point.
 
 Examples:
-    python run.py seed                       # load bundled sample leads
     python run.py search "plumber Austin TX" # search Google Places (needs API key)
     python run.py generate 1                 # generate site + pitch for lead id 1
     python run.py generate-all               # generate for every lead without one
@@ -13,12 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from src import finder, generator, storage
-
-
-def cmd_seed():
-    storage.init_db()
-    n = finder.load_sample_leads()
-    print(f"Loaded {n} sample leads.")
 
 
 def cmd_search(query):
@@ -49,7 +42,7 @@ def cmd_generate_all():
 def cmd_list():
     leads = storage.list_leads(only_no_website=False)
     if not leads:
-        print("No leads. Run `python run.py seed` first.")
+        print("No leads. Run `python run.py search '<query>'` to add some.")
         return
     for lead in leads:
         marks = []
@@ -62,7 +55,6 @@ def cmd_list():
 
 
 COMMANDS = {
-    "seed": cmd_seed,
     "search": cmd_search,
     "generate": cmd_generate,
     "generate-all": cmd_generate_all,

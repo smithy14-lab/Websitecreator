@@ -1,16 +1,17 @@
-"""SQLite-backed lead storage."""
-import sqlite3
+"""Lead storage. Works against SQLite (dev) or Postgres (prod) via db.py."""
 import json
-from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
+from datetime import datetime, timezone
 
-DB_PATH = Path(__file__).parent.parent / "leads.db"
+from .db import IS_POSTGRES, autoincrement_pk, get_conn, q, row_to_dict
 
 
-SCHEMA = """
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+SCHEMA_LEADS = f"""
 CREATE TABLE IF NOT EXISTS leads (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id {autoincrement_pk()},
     business_name TEXT NOT NULL,
     category TEXT,
     address TEXT,
@@ -25,42 +26,91 @@ CREATE TABLE IF NOT EXISTS leads (
     email_pitch TEXT,
     phone_script TEXT,
     notes TEXT,
+    slug TEXT,
+    subscription_status TEXT DEFAULT 'inactive',
+    plan TEXT DEFAULT 'basic',
+    stripe_customer_id TEXT,
+    stripe_subscription_id TEXT,
+    custom_domain TEXT,
+    subscribed_at TEXT,
     created_at TEXT,
     contacted_at TEXT,
     UNIQUE(business_name, address)
 );
-
-CREATE INDEX IF NOT EXISTS idx_status ON leads(status);
-CREATE INDEX IF NOT EXISTS idx_has_website ON leads(has_website);
 """
 
+SCHEMA_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_status ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_has_website ON leads(has_website);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slug ON leads(slug) WHERE slug IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_domain ON leads(custom_domain) WHERE custom_domain IS NOT NULL;
+"""
 
-@contextmanager
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
-        yield conn
-        conn.commit()
-    finally:
-        conn.close()
+# Columns that may need to be added to a pre-existing leads table.
+MIGRATION_COLUMNS = [
+    ("slug", "TEXT"),
+    ("subscription_status", "TEXT DEFAULT 'inactive'"),
+    ("plan", "TEXT DEFAULT 'basic'"),
+    ("stripe_customer_id", "TEXT"),
+    ("stripe_subscription_id", "TEXT"),
+    ("custom_domain", "TEXT"),
+    ("subscribed_at", "TEXT"),
+]
 
 
 def init_db():
     with get_conn() as conn:
-        conn.executescript(SCHEMA)
+        conn.execute(SCHEMA_LEADS)
+        _migrate_columns(conn)
+        for stmt in SCHEMA_INDEXES.strip().split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt)
+    _backfill_slugs()
+
+
+def _backfill_slugs() -> None:
+    """Assign slugs to any lead with a generated site but no slug yet."""
+    from .slugs import unique_slug  # avoid circular import at module load
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, business_name FROM leads "
+            "WHERE site_html IS NOT NULL AND (slug IS NULL OR slug = '')"
+        ).fetchall()
+    for r in rows:
+        r = row_to_dict(r)
+        set_slug(r["id"], unique_slug(r["business_name"], exclude_lead_id=r["id"]))
+
+
+def _migrate_columns(conn) -> None:
+    """Add columns introduced after initial schema. Idempotent."""
+    if IS_POSTGRES:
+        existing = {
+            r["column_name"]
+            for r in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'leads'"
+            ).fetchall()
+        }
+    else:
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(leads)").fetchall()}
+    for col, decl in MIGRATION_COLUMNS:
+        if col not in existing:
+            conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {decl}")
 
 
 def add_lead(lead: dict) -> int | None:
     """Insert a lead. Returns row id, or None if duplicate."""
-    with get_conn() as conn:
-        try:
-            cur = conn.execute(
-                """
-                INSERT INTO leads (business_name, category, address, phone, email,
-                                   has_website, google_maps_url, source, status, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
-                """,
+    try:
+        with get_conn() as conn:
+            row = conn.execute(
+                q(
+                    """
+                    INSERT INTO leads (business_name, category, address, phone, email,
+                                       has_website, google_maps_url, source, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', ?)
+                    RETURNING id
+                    """
+                ),
                 (
                     lead["business_name"],
                     lead.get("category"),
@@ -70,31 +120,49 @@ def add_lead(lead: dict) -> int | None:
                     1 if lead.get("has_website") else 0,
                     lead.get("google_maps_url"),
                     lead.get("source", "manual"),
-                    datetime.utcnow().isoformat(),
+                    _now(),
                 ),
-            )
-            return cur.lastrowid
-        except sqlite3.IntegrityError:
+            ).fetchone()
+            return row["id"] if row else None
+    except Exception as e:
+        # UniqueViolation on either driver maps to a duplicate lead.
+        msg = str(e).lower()
+        if "unique" in msg or "duplicate" in msg:
             return None
+        raise
 
 
 def list_leads(only_no_website: bool = True, status: str | None = None) -> list[dict]:
-    q = "SELECT * FROM leads WHERE 1=1"
+    sql = "SELECT * FROM leads WHERE 1=1"
     args: list = []
     if only_no_website:
-        q += " AND has_website = 0"
+        sql += " AND has_website = 0"
     if status:
-        q += " AND status = ?"
+        sql += " AND status = ?"
         args.append(status)
-    q += " ORDER BY created_at DESC"
+    sql += " ORDER BY created_at DESC"
     with get_conn() as conn:
-        return [dict(r) for r in conn.execute(q, args).fetchall()]
+        return [row_to_dict(r) for r in conn.execute(q(sql), args).fetchall()]
 
 
 def get_lead(lead_id: int) -> dict | None:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM leads WHERE id = ?", (lead_id,)).fetchone()
-        return dict(row) if row else None
+        row = conn.execute(q("SELECT * FROM leads WHERE id = ?"), (lead_id,)).fetchone()
+        return row_to_dict(row) if row else None
+
+
+def get_lead_by_slug(slug: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(q("SELECT * FROM leads WHERE slug = ?"), (slug,)).fetchone()
+        return row_to_dict(row) if row else None
+
+
+def get_lead_by_domain(domain: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            q("SELECT * FROM leads WHERE custom_domain = ?"), (domain,)
+        ).fetchone()
+        return row_to_dict(row) if row else None
 
 
 def update_lead(lead_id: int, **fields) -> None:
@@ -103,14 +171,20 @@ def update_lead(lead_id: int, **fields) -> None:
     cols = ", ".join(f"{k} = ?" for k in fields)
     args = list(fields.values()) + [lead_id]
     with get_conn() as conn:
-        conn.execute(f"UPDATE leads SET {cols} WHERE id = ?", args)
+        conn.execute(q(f"UPDATE leads SET {cols} WHERE id = ?"), args)
 
 
 def mark_contacted(lead_id: int, status: str = "contacted") -> None:
-    update_lead(lead_id, status=status, contacted_at=datetime.utcnow().isoformat())
+    update_lead(lead_id, status=status, contacted_at=_now())
 
 
-def save_generated(lead_id: int, site_html: str, site_copy: dict, email_pitch: str, phone_script: str) -> None:
+def save_generated(
+    lead_id: int,
+    site_html: str,
+    site_copy: dict,
+    email_pitch: str,
+    phone_script: str,
+) -> None:
     update_lead(
         lead_id,
         site_html=site_html,
@@ -120,14 +194,58 @@ def save_generated(lead_id: int, site_html: str, site_copy: dict, email_pitch: s
     )
 
 
+def set_slug(lead_id: int, slug: str) -> None:
+    update_lead(lead_id, slug=slug)
+
+
+def set_subscription(
+    lead_id: int,
+    status: str,
+    plan: str | None = None,
+    stripe_customer_id: str | None = None,
+    stripe_subscription_id: str | None = None,
+) -> None:
+    fields = {"subscription_status": status}
+    if status == "active":
+        fields["subscribed_at"] = _now()
+    if plan:
+        fields["plan"] = plan
+    if stripe_customer_id:
+        fields["stripe_customer_id"] = stripe_customer_id
+    if stripe_subscription_id:
+        fields["stripe_subscription_id"] = stripe_subscription_id
+    update_lead(lead_id, **fields)
+
+
 def stats() -> dict:
     with get_conn() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        no_site = conn.execute("SELECT COUNT(*) FROM leads WHERE has_website = 0").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) AS c FROM leads").fetchone()
+        no_site = conn.execute(
+            "SELECT COUNT(*) AS c FROM leads WHERE has_website = 0"
+        ).fetchone()
         generated = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE site_html IS NOT NULL"
-        ).fetchone()[0]
+            "SELECT COUNT(*) AS c FROM leads WHERE site_html IS NOT NULL"
+        ).fetchone()
         contacted = conn.execute(
-            "SELECT COUNT(*) FROM leads WHERE contacted_at IS NOT NULL"
-        ).fetchone()[0]
-    return {"total": total, "no_website": no_site, "generated": generated, "contacted": contacted}
+            "SELECT COUNT(*) AS c FROM leads WHERE contacted_at IS NOT NULL"
+        ).fetchone()
+        live = conn.execute(
+            q("SELECT COUNT(*) AS c FROM leads WHERE subscription_status = ?"),
+            ("active",),
+        ).fetchone()
+    return {
+        "total": _count(total),
+        "no_website": _count(no_site),
+        "generated": _count(generated),
+        "contacted": _count(contacted),
+        "live": _count(live),
+    }
+
+
+def _count(row) -> int:
+    """Pull the count column out of a heterogeneous row object."""
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return row.get("c", 0)
+    return row[0]

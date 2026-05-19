@@ -14,6 +14,7 @@ from pathlib import Path
 import anthropic
 
 from . import storage
+from .slugs import unique_slug
 
 
 GENERATED_DIR = Path(__file__).parent.parent / "generated_sites"
@@ -363,6 +364,9 @@ def generate_for_lead(lead_id: int) -> dict:
     phone_script = generate_phone_script(lead)
 
     storage.save_generated(lead_id, site_html, copy, email_pitch, phone_script)
+
+    if not lead.get("slug"):
+        storage.set_slug(lead_id, unique_slug(lead["business_name"], exclude_lead_id=lead_id))
 
     GENERATED_DIR.mkdir(exist_ok=True)
     safe_name = "".join(c if c.isalnum() else "_" for c in lead["business_name"])[:50]

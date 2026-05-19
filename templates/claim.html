@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claim your site — {{ lead.business_name }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(180deg, #f7f8fb 0%, #eef2ff 100%);
+    color: #1a1a1a;
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  .hero { text-align: center; padding: 2rem 0; }
+  .hero h1 { font-size: 2rem; margin-bottom: 0.75rem; }
+  .hero p { color: #475569; font-size: 1.1rem; max-width: 540px; margin: 0 auto; }
+  .preview {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 2rem 0;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+  }
+  .preview iframe { width: 100%; height: 540px; border: 0; display: block; background: white; }
+  .preview .preview-link {
+    padding: 0.75rem 1rem; background: #f9fafb; border-top: 1px solid #e5e7eb;
+    text-align: center; font-size: 0.85rem; color: #6b7280;
+  }
+  .plans h2 {
+    text-align: center; font-size: 1.4rem; margin: 2rem 0 1rem;
+  }
+  .plan-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+  }
+  .plan {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1.5rem 1.25rem;
+    text-align: center;
+  }
+  .plan.featured { border-color: #2563eb; box-shadow: 0 4px 16px rgba(37,99,235,0.12); }
+  .plan .label { font-size: 0.9rem; color: #6b7280; }
+  .plan .price { font-size: 2rem; font-weight: 700; margin: 0.5rem 0; color: #1a1a1a; }
+  .plan .price small { font-size: 0.85rem; color: #6b7280; font-weight: 400; }
+  .plan button {
+    width: 100%;
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.7rem;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: 600;
+    margin-top: 0.5rem;
+  }
+  .plan button:hover { background: #1d4ed8; }
+  footer { text-align: center; color: #94a3b8; font-size: 0.8rem; margin: 2rem 0 0; }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="hero">
+      <h1>Your website for {{ lead.business_name }} is ready.</h1>
+      <p>We built you a free preview. Pick a plan to make it live.</p>
+    </div>
+
+    <div class="preview">
+      <iframe src="{{ base_url }}/s/{{ slug }}?noBanner=1" title="Site preview"></iframe>
+      <div class="preview-link">Preview URL: {{ base_url }}/s/{{ slug }}</div>
+    </div>
+
+    <div class="plans">
+      <h2>Pick a plan</h2>
+      <div class="plan-grid">
+        {% for plan_id, plan in plans.items() %}
+        <div class="plan {% if plan_id == 'basic' %}featured{% endif %}">
+          <div class="label">{{ plan.label }}</div>
+          <div class="price">£{{ plan.monthly_gbp }} <small>/ month</small></div>
+          <form method="post" action="{{ url_for('billing_subscribe', lead_id=lead.id) }}">
+            <input type="hidden" name="plan" value="{{ plan_id }}">
+            <button type="submit">Subscribe</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <footer>
+      Cancel anytime. Hosted, secured, and updated by us.
+    </footer>
+
+  </div>
+</body>
+</html>

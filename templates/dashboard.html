@@ -90,6 +90,13 @@
   .badge-interested { background: #ede9fe; color: #5b21b6; }
   .badge-closed_won { background: #d1fae5; color: #064e3b; }
   .badge-closed_lost { background: #fee2e2; color: #991b1b; }
+  .badge-active { background: #dcfce7; color: #166534; }
+  .badge-past_due { background: #fef3c7; color: #92400e; }
+  .badge-canceled { background: #fee2e2; color: #991b1b; }
+  .badge-inactive { background: #f1f5f9; color: #475569; }
+  .top-row { display: flex; justify-content: space-between; align-items: center; }
+  .top-row .logout { font-size: 0.85rem; color: #6b7280; text-decoration: none; }
+  .top-row .logout:hover { color: #2563eb; }
   .empty {
     text-align: center;
     padding: 4rem 2rem;
@@ -103,8 +110,15 @@
 <body>
 
 <header>
-  <h1>Website Creator — Lead Dashboard</h1>
-  <div class="sub">Small businesses without websites, plus AI-generated mockups + pitches.</div>
+  <div class="top-row">
+    <div>
+      <h1>Website Creator — Lead Dashboard</h1>
+      <div class="sub">Small businesses without websites, plus AI-generated mockups + pitches.</div>
+    </div>
+    <form method="post" action="{{ url_for('logout') }}" style="margin:0">
+      <button class="logout" type="submit" style="background:none;border:none;cursor:pointer;">Log out</button>
+    </form>
+  </div>
 </header>
 
 <div class="container">
@@ -114,6 +128,7 @@
     <div class="stat"><div class="num">{{ stats.no_website }}</div><div class="lbl">No website</div></div>
     <div class="stat"><div class="num">{{ stats.generated }}</div><div class="lbl">Sites generated</div></div>
     <div class="stat"><div class="num">{{ stats.contacted }}</div><div class="lbl">Contacted</div></div>
+    <div class="stat"><div class="num">{{ stats.live }}</div><div class="lbl">Live subscriptions</div></div>
   </div>
 
   <div class="actions">
@@ -129,9 +144,9 @@
       <tr>
         <th>Business</th>
         <th>Category</th>
-        <th>Phone</th>
         <th>Status</th>
-        <th>Generated?</th>
+        <th>Site</th>
+        <th>Subscription</th>
         <th></th>
       </tr>
     </thead>
@@ -143,9 +158,15 @@
           <div class="meta">{{ lead.address or '' }}</div>
         </td>
         <td>{{ lead.category or '—' }}</td>
-        <td>{{ lead.phone or '—' }}</td>
         <td><span class="badge badge-{{ lead.status }}">{{ lead.status.replace('_', ' ') }}</span></td>
-        <td>{% if lead.site_html %}✓{% else %}—{% endif %}</td>
+        <td>
+          {% if lead.slug %}
+            <a href="{{ base_url }}/s/{{ lead.slug }}" target="_blank">/s/{{ lead.slug }}</a>
+          {% elif lead.site_html %}
+            ✓ generated
+          {% else %}—{% endif %}
+        </td>
+        <td><span class="badge badge-{{ lead.subscription_status or 'inactive' }}">{{ (lead.subscription_status or 'inactive').replace('_', ' ') }}</span></td>
         <td><a class="btn-secondary btn" href="{{ url_for('lead_detail', lead_id=lead.id) }}">Open</a></td>
       </tr>
       {% endfor %}
