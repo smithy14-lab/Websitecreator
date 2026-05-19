@@ -1,19 +1,17 @@
 """Find businesses without websites.
 
 Two paths:
-  - With GOOGLE_PLACES_API_KEY set: real lead sourcing via Places API
+  - With GOOGLE_PLACES_API_KEY set: real lead sourcing via Places API (New)
   - Without it: load bundled sample data
 """
 import os
-import time
 import requests
 
 from . import storage
 from .sample_data import SAMPLE_LEADS
 
 
-PLACES_TEXTSEARCH = "https://maps.googleapis.com/maps/api/place/textsearch/json"
-PLACES_DETAILS = "https://maps.googleapis.com/maps/api/place/details/json"
+PLACES_SEARCH_TEXT = "https://places.googleapis.com/v1/places:searchText"
 
 
 def load_sample_leads() -> int:
@@ -27,8 +25,7 @@ def load_sample_leads() -> int:
 
 
 def search_google_places(query: str, max_results: int = 20) -> list[dict]:
-    """Search Google Places for businesses matching the query and filter to those
-    that have no `website` field in their details.
+    """Search Google Places (New API) for businesses matching the query.
 
     Example queries:
         "plumber in Austin, TX"
@@ -45,61 +42,51 @@ def search_google_places(query: str, max_results: int = 20) -> list[dict]:
     storage.init_db()
     leads_added = []
 
-    # Step 1: text search to find candidate places
-    resp = requests.get(
-        PLACES_TEXTSEARCH,
-        params={"query": query, "key": api_key},
-        timeout=15,
-    )
-    resp.raise_for_status()
-    data = resp.json()
-    status = data.get("status")
-    if status != "OK":
-        # Google returns 200 even on errors; the real status is in the body.
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": (
+            "places.id,places.displayName,places.formattedAddress,"
+            "places.nationalPhoneNumber,places.websiteUri,places.googleMapsUri,"
+            "places.types"
+        ),
+    }
+    body = {"textQuery": query, "maxResultCount": min(max_results, 20)}
+
+    resp = requests.post(PLACES_SEARCH_TEXT, json=body, headers=headers, timeout=15)
+    if resp.status_code != 200:
+        try:
+            err = resp.json().get("error", {}).get("message", resp.text)
+        except Exception:
+            err = resp.text
         raise RuntimeError(
-            f"Google Places API returned status={status}. "
-            f"Message: {data.get('error_message', '(none)')}"
+            f"Google Places API error (HTTP {resp.status_code}): {err}"
         )
-    results = data.get("results", [])[:max_results]
-    print(f"[finder] query={query!r} returned {len(results)} results", flush=True)
 
-    # Step 2: fetch details to inspect website field
-    for r in results:
-        place_id = r.get("place_id")
-        if not place_id:
+    places = resp.json().get("places", [])
+    print(f"[finder] query={query!r} returned {len(places)} places", flush=True)
+
+    for p in places:
+        name = (p.get("displayName") or {}).get("text")
+        if not name:
             continue
-
-        details_resp = requests.get(
-            PLACES_DETAILS,
-            params={
-                "place_id": place_id,
-                "fields": "name,formatted_address,formatted_phone_number,website,url,types",
-                "key": api_key,
-            },
-            timeout=15,
-        )
-        details_resp.raise_for_status()
-        d = details_resp.json().get("result", {})
-
-        has_website = bool(d.get("website"))
-        types = d.get("types", [])
+        has_website = bool(p.get("websiteUri"))
+        types = p.get("types", [])
         category = types[0].replace("_", " ").title() if types else None
 
         lead = {
-            "business_name": d.get("name"),
+            "business_name": name,
             "category": category,
-            "address": d.get("formatted_address"),
-            "phone": d.get("formatted_phone_number"),
+            "address": p.get("formattedAddress"),
+            "phone": p.get("nationalPhoneNumber"),
             "email": None,
             "has_website": has_website,
-            "google_maps_url": d.get("url"),
+            "google_maps_url": p.get("googleMapsUri"),
             "source": "google_places",
         }
 
         if storage.add_lead(lead) is not None:
             leads_added.append(lead)
-
-        time.sleep(0.1)
 
     return leads_added
 
