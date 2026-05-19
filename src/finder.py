@@ -52,7 +52,16 @@ def search_google_places(query: str, max_results: int = 20) -> list[dict]:
         timeout=15,
     )
     resp.raise_for_status()
-    results = resp.json().get("results", [])[:max_results]
+    data = resp.json()
+    status = data.get("status")
+    if status != "OK":
+        # Google returns 200 even on errors; the real status is in the body.
+        raise RuntimeError(
+            f"Google Places API returned status={status}. "
+            f"Message: {data.get('error_message', '(none)')}"
+        )
+    results = data.get("results", [])[:max_results]
+    print(f"[finder] query={query!r} returned {len(results)} results", flush=True)
 
     # Step 2: fetch details to inspect website field
     for r in results:
