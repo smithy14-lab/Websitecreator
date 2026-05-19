@@ -117,9 +117,6 @@
   </div>
 
   <div class="actions">
-    <form method="post" action="/seed" class="inline">
-      <button class="btn-secondary btn" type="submit">+ Load sample leads</button>
-    </form>
     <form method="post" action="/search" class="inline">
       <input type="text" name="query" placeholder="e.g. plumber in Austin, TX">
       <button class="btn" type="submit">Search Google Places</button>
@@ -157,7 +154,7 @@
   {% else %}
   <div class="empty">
     <p>No leads yet.</p>
-    <p style="margin-top:0.5rem;">Click <strong>Load sample leads</strong> above to get started.</p>
+    <p style="margin-top:0.5rem;">Search a location above to find businesses.</p>
   </div>
   {% endif %}
 

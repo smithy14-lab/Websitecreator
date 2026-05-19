@@ -63,13 +63,6 @@ def lead_mark(lead_id):
     return redirect(url_for("lead_detail", lead_id=lead_id))
 
 
-@app.route("/seed", methods=["POST"])
-def seed():
-    """Reload bundled sample leads."""
-    count = finder.load_sample_leads()
-    return redirect(url_for("dashboard"))
-
-
 @app.route("/search", methods=["POST"])
 def search():
     """Trigger a Google Places search (requires GOOGLE_PLACES_API_KEY)."""
@@ -85,6 +78,4 @@ def search():
 
 if __name__ == "__main__":
     storage.init_db()
-    if not storage.list_leads(only_no_website=False):
-        finder.load_sample_leads()
     app.run(host="0.0.0.0", port=5000, debug=True)

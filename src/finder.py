@@ -1,27 +1,11 @@
-"""Find businesses without websites.
-
-Two paths:
-  - With GOOGLE_PLACES_API_KEY set: real lead sourcing via Places API (New)
-  - Without it: load bundled sample data
-"""
+"""Find businesses via Google Places API (New)."""
 import os
 import requests
 
 from . import storage
-from .sample_data import SAMPLE_LEADS
 
 
 PLACES_SEARCH_TEXT = "https://places.googleapis.com/v1/places:searchText"
-
-
-def load_sample_leads() -> int:
-    """Insert bundled sample leads. Returns count newly inserted."""
-    storage.init_db()
-    inserted = 0
-    for lead in SAMPLE_LEADS:
-        if storage.add_lead(lead) is not None:
-            inserted += 1
-    return inserted
 
 
 def search_google_places(query: str, max_results: int = 20) -> list[dict]:
@@ -34,10 +18,7 @@ def search_google_places(query: str, max_results: int = 20) -> list[dict]:
     """
     api_key = os.environ.get("GOOGLE_PLACES_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            "GOOGLE_PLACES_API_KEY not set. Either set it in .env or use "
-            "load_sample_leads() instead."
-        )
+        raise RuntimeError("GOOGLE_PLACES_API_KEY not set in .env")
 
     storage.init_db()
     leads_added = []
@@ -89,15 +70,3 @@ def search_google_places(query: str, max_results: int = 20) -> list[dict]:
             leads_added.append(lead)
 
     return leads_added
-
-
-def find_leads(query: str | None = None, max_results: int = 20) -> int:
-    """Convenience wrapper. Returns count of leads added.
-
-    If query provided + API key set → real search.
-    Otherwise → load sample data.
-    """
-    if query and os.environ.get("GOOGLE_PLACES_API_KEY"):
-        results = search_google_places(query, max_results=max_results)
-        return len(results)
-    return load_sample_leads()
