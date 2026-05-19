@@ -44,6 +44,38 @@ Subscription state is reflected on the site:
 - **past_due** — site shown with a red "payment failed" banner.
 - **canceled** — site replaced with a "no longer active / reactivate" page (HTTP 410).
 
+### Custom domains (premium-tier upsell)
+
+Each lead can have one custom domain saved against it. When a visitor's `Host` header matches `lead.custom_domain`, the app serves that customer's site.
+
+**On the app side** — set the domain via the "Custom domain" field on the lead detail page. The app does the rest.
+
+**On the customer's side** — they add a DNS record pointing at your app:
+- For Railway: a CNAME to your Railway-provided hostname is simplest.
+- Verify with `dig CNAME bobsplumbing.co.uk` from a terminal.
+
+**SSL is the operational piece.** Three production paths, easiest first:
+
+1. **Cloudflare for SaaS** (recommended). Customers CNAME their domain to a hostname you give them; Cloudflare provisions and renews the cert automatically. ~$0.10/site/month. No code changes.
+2. **Caddy in front of Flask** with on-demand TLS. Run a Caddy container that auto-fetches Let's Encrypt certs the first time a new domain is hit. Requires deploying with Docker rather than Railway's buildpack; sample `Caddyfile`:
+   ```
+   {
+     on_demand_tls { ask http://app:5000/.well-known/host-allowed }
+   }
+   :443 {
+     reverse_proxy app:5000
+     tls { on_demand }
+   }
+   ```
+   (You'll need to add a `/.well-known/host-allowed` endpoint that returns 200 if the host is in `leads.custom_domain` — that protects against random certificate issuance.)
+3. **Manual** — provision a wildcard cert for your own domain and stop offering custom-domain hosting. Saves complexity but loses the upsell.
+
+### Multi-page sites
+
+The basic plan generates a one-page site. The multipage/premium plans generate a 4-page site (Home, Services, About, Contact) sharing one design.
+
+In the admin, the lead detail page has two generate buttons — pick one. After generation, existing one-pagers can be upgraded to multi-page with one click. Generation cost is roughly 2.5x a one-pager (longer Claude response, no extra API calls per page — single structured-output call).
+
 ### Stripe setup
 
 1. Create products + recurring prices in <https://dashboard.stripe.com/products>:

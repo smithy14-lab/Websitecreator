@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS leads (
     stripe_subscription_id TEXT,
     custom_domain TEXT,
     subscribed_at TEXT,
+    extra_pages_json TEXT,
+    site_kind TEXT DEFAULT 'single',
     created_at TEXT,
     contacted_at TEXT,
     UNIQUE(business_name, address)
@@ -55,6 +57,8 @@ MIGRATION_COLUMNS = [
     ("stripe_subscription_id", "TEXT"),
     ("custom_domain", "TEXT"),
     ("subscribed_at", "TEXT"),
+    ("extra_pages_json", "TEXT"),
+    ("site_kind", "TEXT DEFAULT 'single'"),
 ]
 
 
@@ -184,14 +188,22 @@ def save_generated(
     site_copy: dict,
     email_pitch: str,
     phone_script: str,
+    extra_pages: dict | None = None,
+    site_kind: str = "single",
 ) -> None:
-    update_lead(
-        lead_id,
+    fields = dict(
         site_html=site_html,
         site_copy_json=json.dumps(site_copy),
         email_pitch=email_pitch,
         phone_script=phone_script,
+        site_kind=site_kind,
+        extra_pages_json=json.dumps(extra_pages) if extra_pages else None,
     )
+    update_lead(lead_id, **fields)
+
+
+def set_custom_domain(lead_id: int, domain: str | None) -> None:
+    update_lead(lead_id, custom_domain=domain)
 
 
 def set_slug(lead_id: int, slug: str) -> None:

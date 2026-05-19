@@ -156,6 +156,19 @@
       ✓ Live subscription on the <strong>{{ lead.plan }}</strong> plan.
     </div>
     {% endif %}
+
+    <div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #e5e7eb;">
+      <div style="font-size:0.85rem;color:#6b7280;margin-bottom:0.4rem;">Custom domain (premium)</div>
+      <form method="post" action="{{ url_for('lead_set_domain', lead_id=lead.id) }}" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <input type="text" name="custom_domain" value="{{ lead.custom_domain or '' }}" placeholder="e.g. bobsplumbing.co.uk" style="flex:1;min-width:240px;padding:0.55rem 0.8rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;">
+        <button class="btn-secondary btn" type="submit">Save</button>
+      </form>
+      {% if lead.custom_domain %}
+      <div style="font-size:0.8rem;color:#6b7280;margin-top:0.5rem;">
+        Customer must point <code>{{ lead.custom_domain }}</code> at the app via a CNAME or A record. See the deployment docs for SSL.
+      </div>
+      {% endif %}
+    </div>
   </div>
   {% endif %}
 
@@ -172,13 +185,25 @@
     <div class="btn-row">
       {% if not lead.site_html %}
       <form method="post" action="{{ url_for('lead_generate', lead_id=lead.id) }}">
-        <button class="btn" type="submit">Generate site + pitches</button>
+        <input type="hidden" name="kind" value="single">
+        <button class="btn" type="submit">Generate one-pager</button>
+      </form>
+      <form method="post" action="{{ url_for('lead_generate', lead_id=lead.id) }}">
+        <input type="hidden" name="kind" value="multi">
+        <button class="btn-secondary btn" type="submit">Generate multi-page</button>
       </form>
       {% else %}
       <form method="post" action="{{ url_for('lead_generate', lead_id=lead.id) }}">
-        <button class="btn-secondary btn" type="submit">Regenerate</button>
+        <input type="hidden" name="kind" value="{{ lead.site_kind or 'single' }}">
+        <button class="btn-secondary btn" type="submit">Regenerate ({{ lead.site_kind or 'single' }})</button>
       </form>
-      <a class="btn" href="{{ url_for('lead_preview', lead_id=lead.id) }}" target="_blank">Open full preview</a>
+      {% if lead.site_kind == 'single' %}
+      <form method="post" action="{{ url_for('lead_generate', lead_id=lead.id) }}">
+        <input type="hidden" name="kind" value="multi">
+        <button class="btn-secondary btn" type="submit">Upgrade to multi-page</button>
+      </form>
+      {% endif %}
+      <a class="btn" href="{{ url_for('lead_preview', lead_id=lead.id) }}" target="_blank">Admin preview</a>
       {% endif %}
     </div>
 

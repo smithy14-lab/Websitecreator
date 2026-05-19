@@ -1,6 +1,8 @@
 """Flask app: admin dashboard, public site hosting, Stripe billing."""
 import functools
+import json
 import os
+import re
 import secrets
 
 from dotenv import load_dotenv
@@ -105,10 +107,25 @@ def lead_detail(lead_id):
 @app.route("/lead/<int:lead_id>/generate", methods=["POST"])
 @require_admin
 def lead_generate(lead_id):
+    kind = request.form.get("kind", "single")
     try:
-        generator.generate_for_lead(lead_id)
+        if kind == "multi":
+            generator.generate_multipage_for_lead(lead_id)
+        else:
+            generator.generate_for_lead(lead_id)
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400
+    return redirect(url_for("lead_detail", lead_id=lead_id))
+
+
+@app.route("/lead/<int:lead_id>/domain", methods=["POST"])
+@require_admin
+def lead_set_domain(lead_id):
+    raw = (request.form.get("custom_domain") or "").strip().lower()
+    domain = re.sub(r"^https?://", "", raw).rstrip("/")
+    if domain and not re.match(r"^[a-z0-9.-]+\.[a-z]{2,}$", domain):
+        return jsonify({"error": f"Invalid domain: {domain}"}), 400
+    storage.set_custom_domain(lead_id, domain or None)
     return redirect(url_for("lead_detail", lead_id=lead_id))
 
 
@@ -181,20 +198,48 @@ def _detect_site_subdomain() -> str | None:
     return sub
 
 
+def _detect_custom_domain() -> dict | None:
+    """Return the lead whose custom_domain matches the request Host header."""
+    host = request.host.lower().split(":")[0]
+    if not host or host == APEX_DOMAIN or host == f"www.{APEX_DOMAIN}":
+        return None
+    if APEX_DOMAIN and host.endswith(f".{APEX_DOMAIN}"):
+        return None  # subdomain hosting handles this
+    return storage.get_lead_by_domain(host)
+
+
 @app.before_request
 def serve_subdomain_site():
-    """If the request targets <slug>.<apex>, serve the customer site directly."""
+    """If the request targets <slug>.<apex> or a custom domain, serve the site."""
+    lead = None
     sub = _detect_site_subdomain()
-    if not sub:
-        return None
-    lead = storage.get_lead_by_slug(sub)
-    if not lead or not lead.get("site_html"):
-        abort(404)
-    return _render_public_site(lead)
+    if sub:
+        lead = storage.get_lead_by_slug(sub)
+        if not lead or not lead.get("site_html"):
+            abort(404)
+    else:
+        lead = _detect_custom_domain()
+        if not lead:
+            return None
+        if not lead.get("site_html"):
+            abort(404)
+
+    page = request.path.strip("/")
+    return _render_public_page(lead, page or "home")
 
 
-def _render_public_site(lead: dict) -> Response:
-    """Render a lead's site, swapping in a banner based on subscription state."""
+def _path_prefix_for(lead: dict) -> str:
+    """URL prefix the visitor is using for this lead's site (empty on subdomain/custom domain)."""
+    host = request.host.lower().split(":")[0]
+    if SUBDOMAIN_MODE and APEX_DOMAIN and host.endswith(f".{APEX_DOMAIN}") and host != APEX_DOMAIN:
+        return ""
+    if lead.get("custom_domain") and lead["custom_domain"] == host:
+        return ""
+    return f"/s/{lead['slug']}"
+
+
+def _render_public_page(lead: dict, page: str) -> Response:
+    """Render a single page of a customer's site."""
     status = lead.get("subscription_status") or "inactive"
 
     if status == "canceled":
@@ -204,9 +249,19 @@ def _render_public_site(lead: dict) -> Response:
             mimetype="text/html",
         )
 
-    html = lead["site_html"]
-    no_banner = request.args.get("noBanner") == "1"
+    if page == "home":
+        html = lead["site_html"]
+    else:
+        extras = json.loads(lead.get("extra_pages_json") or "{}")
+        html = extras.get(page)
+        if not html:
+            abort(404)
 
+    prefix = _path_prefix_for(lead)
+    if prefix and '<base href="/">' in html:
+        html = html.replace('<base href="/">', f'<base href="{prefix}/">')
+
+    no_banner = request.args.get("noBanner") == "1"
     if not no_banner:
         if status == "inactive":
             banner = PREVIEW_BANNER.format(
@@ -219,12 +274,26 @@ def _render_public_site(lead: dict) -> Response:
     return Response(html, mimetype="text/html")
 
 
+def _render_public_site(lead: dict) -> Response:
+    """Backwards-compatible single-page render (home only)."""
+    return _render_public_page(lead, "home")
+
+
 @app.route("/s/<slug>")
+@app.route("/s/<slug>/")
 def public_site(slug):
     lead = storage.get_lead_by_slug(slug)
     if not lead or not lead.get("site_html"):
         abort(404)
-    return _render_public_site(lead)
+    return _render_public_page(lead, "home")
+
+
+@app.route("/s/<slug>/<page>")
+def public_site_page(slug, page):
+    lead = storage.get_lead_by_slug(slug)
+    if not lead or not lead.get("site_html"):
+        abort(404)
+    return _render_public_page(lead, page)
 
 
 @app.route("/claim/<slug>")
