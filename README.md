@@ -29,6 +29,21 @@ Open <http://localhost:5000>. Sign in with the `ADMIN_PASSWORD` you set. Local d
 5. Add a custom domain in Railway's **Settings → Networking**, point your DNS at it, set `BASE_URL=https://yourdomain.com`.
 6. Configure the Stripe webhook (next section).
 
+### Subdomain hosting (optional)
+
+By default each generated site lives at `https://yourdomain.com/s/bobs-plumbing`. To upgrade to `https://bobs-plumbing.yourdomain.com`:
+
+1. On your DNS host (Cloudflare, etc.), add a wildcard `A` or `CNAME` record: `*.yourdomain.com` → the same target as `yourdomain.com`.
+2. In Railway's domain settings, register `*.yourdomain.com` as a custom domain (Railway will provision a wildcard cert).
+3. Set env vars: `SUBDOMAIN_MODE=1`, `APEX_DOMAIN=yourdomain.com`.
+4. Restart. Both URL styles will work; the subdomain is the new "preferred" one for pitches.
+
+Subscription state is reflected on the site:
+- **inactive** (prospect, never subscribed) — site shown with a "Claim this site" banner.
+- **active** — clean site.
+- **past_due** — site shown with a red "payment failed" banner.
+- **canceled** — site replaced with a "no longer active / reactivate" page (HTTP 410).
+
 ### Stripe setup
 
 1. Create products + recurring prices in <https://dashboard.stripe.com/products>:
